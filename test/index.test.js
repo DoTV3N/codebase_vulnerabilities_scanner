@@ -1,78 +1,116 @@
 import nock from "nock";
-// Requiring our app implementation
-import myProbotApp from "../index.js";
 import { Probot, ProbotOctokit } from "probot";
-// Requiring our fixtures
-//import payload from "./fixtures/issues.opened.json" with { type: "json" };
-const issueCreatedBody = { body: "Thanks for opening this issue!" };
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-
 import { describe, beforeEach, afterEach, test } from "node:test";
 import assert from "node:assert";
+
+// Set the API key BEFORE dynamically loading index.js so @google/genai
+// initialises with it (static imports are hoisted, dynamic ones are not).
+process.env.GOOGLE_API_KEY = "test-key";
+const { default: myProbotApp } = await import("../index.js");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const privateKey = fs.readFileSync(
   path.join(__dirname, "fixtures/mock-cert.pem"),
-  "utf-8",
+  "utf-8"
 );
 
-const payload = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "fixtures/issues.opened.json"), "utf-8"),
+const prPayload = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "fixtures/pull_request.opened.json"), "utf-8")
 );
+
+const pushPayload = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "fixtures/push.main.json"), "utf-8")
+);
+
+// Minimal valid Gemini API response shape
+const mockGeminiResponse = JSON.stringify({
+  candidates: [{
+    content: { parts: [{ text: "## Summary\nMock AI review." }] },
+    finishReason: "STOP",
+  }],
+});
 
 describe("My Probot app", () => {
   let probot;
+  let originalFetch;
 
   beforeEach(() => {
     nock.disableNetConnect();
+
+    // @google/genai uses globalThis.fetch (undici), which nock doesn't intercept.
+    // We swap it out so tests stay offline and deterministic.
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts) => {
+      if (typeof url === "string" && url.includes("generativelanguage.googleapis.com")) {
+        return new Response(mockGeminiResponse, {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return originalFetch(url, opts);
+    };
+
     probot = new Probot({
       appId: 123,
       privateKey,
-      // disable request throttling and retries for testing
       Octokit: ProbotOctokit.defaults({
         retry: { enabled: false },
         throttle: { enabled: false },
       }),
     });
-    // Load our app into probot
     probot.load(myProbotApp);
   });
 
-  test("creates a comment when an issue is opened", async () => {
-    const mock = nock("https://api.github.com")
-      // Test that we correctly return a test token
-      .post("/app/installations/2/access_tokens")
-      .reply(200, {
-        token: "test",
-        permissions: {
-          issues: "write",
-        },
-      })
-
-      // Test that a comment is posted
-      .post("/repos/hiimbex/testing-things/issues/1/comments", (body) => {
-        assert.deepEqual(body, issueCreatedBody);
-        return true;
-      })
-      .reply(200);
-
-    // Receive a webhook event
-    await probot.receive({ name: "issues", payload });
-
-    assert.deepStrictEqual(mock.pendingMocks(), []);
-  });
-
   afterEach(() => {
+    globalThis.fetch = originalFetch;
     nock.cleanAll();
     nock.enableNetConnect();
   });
+
+  test("posts a review comment when a pull request is opened", async () => {
+    nock("https://api.github.com")
+      .post("/app/installations/2/access_tokens")
+      .reply(200, { token: "test", permissions: { issues: "write", contents: "write" } });
+
+    nock("https://github.com")
+      .get("/hiimbex/testing-things/pull/1.diff")
+      .reply(200, "diff --git a/index.js b/index.js\n+console.log('hello');");
+
+    nock("https://api.github.com")
+      .post("/repos/hiimbex/testing-things/issues/1/comments")
+      .reply(200);
+
+    await probot.receive({ name: "pull_request", payload: prPayload });
+
+    assert.strictEqual(nock.pendingMocks().length, 0, "All HTTP mocks should be consumed");
+  });
+
+  test("posts a commit comment when code is pushed to main", async () => {
+    nock("https://api.github.com")
+      .post("/app/installations/2/access_tokens")
+      .reply(200, { token: "test", permissions: { issues: "write", contents: "write" } });
+
+    nock("https://api.github.com")
+      .get(/\/repos\/hiimbex\/testing-things\/compare\//)
+      .reply(200, "diff --git a/index.js b/index.js\n+console.log('hello');");
+
+    nock("https://api.github.com")
+      .post(`/repos/hiimbex/testing-things/commits/${pushPayload.after}/comments`)
+      .reply(200);
+
+    await probot.receive({ name: "push", payload: pushPayload });
+
+    assert.strictEqual(nock.pendingMocks().length, 0, "All HTTP mocks should be consumed");
+  });
+
+  test("ignores pushes to branches other than main", async () => {
+    const nonMainPayload = { ...pushPayload, ref: "refs/heads/feature-branch" };
+
+    // No mocks set up — nock will throw if any network call is made
+    await probot.receive({ name: "push", payload: nonMainPayload });
+  });
 });
-
-// For more information about testing with Jest see:
-// https://facebook.github.io/jest/
-
-// For more information about testing with Nock see:
-// https://github.com/nock/nock

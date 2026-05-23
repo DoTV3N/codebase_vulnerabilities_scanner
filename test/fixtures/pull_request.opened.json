@@ -1,0 +1,19 @@
+{
+  "action": "opened",
+  "number": 1,
+  "pull_request": {
+    "number": 1,
+    "title": "Add new feature",
+    "body": "This PR adds a new feature",
+    "diff_url": "https://github.com/hiimbex/testing-things/pull/1.diff",
+    "head": { "sha": "abc123" },
+    "base": { "sha": "def456" }
+  },
+  "repository": {
+    "name": "testing-things",
+    "full_name": "hiimbex/testing-things",
+    "owner": { "login": "hiimbex", "type": "User" }
+  },
+  "installation": { "id": 2, "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uMg==" },
+  "sender": { "login": "hiimbex", "type": "User" }
+}

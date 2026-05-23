@@ -1,0 +1,20 @@
+{
+  "ref": "refs/heads/main",
+  "before": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+  "after": "abc123def456abc123def456abc123def456abc1",
+  "commits": [
+    {
+      "id": "abc123def456abc123def456abc123def456abc1",
+      "message": "Fix critical bug",
+      "author": { "name": "Test User", "email": "test@example.com", "username": "hiimbex" }
+    }
+  ],
+  "repository": {
+    "name": "testing-things",
+    "full_name": "hiimbex/testing-things",
+    "owner": { "name": "hiimbex", "login": "hiimbex", "type": "User" }
+  },
+  "pusher": { "name": "hiimbex", "email": "hiimbex@github.com" },
+  "installation": { "id": 2, "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uMg==" },
+  "sender": { "login": "hiimbex", "type": "User" }
+}
